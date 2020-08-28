@@ -1,6 +1,7 @@
 # CHAdeMOSoftware
 Software for Damien Maguire's CHAdeMO controller: https://github.com/damienmaguire/Chademo-Fast-Charge-Controller
-This code will help you add CHAdeMO DC fast charging to your EV, whether it is OEM or DIY.
+This code will help you add CHAdeMO DC fast charging to your EV, whether it is OEM or DIY.  
+
 
 # Required hardware 
 - CHAdeMO connector  
@@ -26,6 +27,7 @@ This code will help you add CHAdeMO DC fast charging to your EV, whether it is O
 
 
 # Notes
+- There are a few configuration options in the software - press 'p' in the serial monitor to see them.  
 - I am open to adding support for different CAN-bus BMS systems, and possibly different voltage and current sensors. If you want something added please at least send me the entire protocol.  
 - The Leaf VCU requires a single modification to function correctly. Because its inputs are protected by voltage dividers, R17 (pulldown for IN2/D7) must be removed.    
 - If you don't have a Leaf VCU or don't want to dish out 300 euros, you can use a standard Due. You will need an M24M02 EEPROM, two open collector outputs, and two 12V-tolerant inputs, as well as dual CAN transceivers.
