@@ -62,6 +62,11 @@ void CHADEMO::setBattOverTemp()
   carStatus.battOverTemp = 1;
 }
 
+void CHADEMO::setBattOverVolt()
+{
+  carStatus.battOverVolt = 1;
+}
+
 //stuff that should be frequently run (as fast as possible)
 void CHADEMO::loop()
 {

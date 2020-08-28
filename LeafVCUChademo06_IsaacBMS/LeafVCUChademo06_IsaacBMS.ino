@@ -85,6 +85,45 @@ void timer2Int()
   }
 }
 
+class BMS : public CANListener //CANListener provides an interface to get callbacks on this class
+{
+  public:
+    void printFrame(CAN_FRAME *frame, int mailbox);
+    void gotFrame(CAN_FRAME *frame, int mailbox); //overrides the parent version so we can actually do something
+    uint8_t voltageStatus;//1 = hvc, 2 = lvc, 4 = bvc
+    uint8_t tempStatus;//4 = overtemp
+};
+
+//Prints out the most useful information about the incoming frame.
+void BMS::printFrame(CAN_FRAME *frame, int mailbox)
+{
+  Serial.print("MB: ");
+  if (mailbox > -1) Serial.print(mailbox);
+  else Serial.print("???");
+  Serial.print(" ID: 0x");
+  Serial.print(frame->id, HEX);
+  Serial.print(" Len: ");
+  Serial.print(frame->length);
+  Serial.print(" Data: 0x");
+  for (int count = 0; count < frame->length; count++) {
+    Serial.print(frame->data.bytes[count], HEX);
+    Serial.print(" ");
+  }
+  Serial.print("\r\n");
+}
+
+//Classes register just one method that receives all callbacks. If a frame didn't match any specific mailbox
+//callback but the general callback was registered then the mailbox will be set as -1. Otherwise it is the mailbox
+//with the matching filter for this frame.
+void BMS::gotFrame(CAN_FRAME* frame, int mailbox)
+{
+  this->printFrame(frame, mailbox);
+  voltageStatus = frame->data.byte[0];
+  tempStatus = frame->data.byte[2];
+}
+
+BMS myBMS; //initialize the class global so the reference to it can be picked up anywhere
+
 void setup()
 {
   //first thing configure the I/O pins and set them to a sane state
@@ -103,13 +142,12 @@ void setup()
   Sensor.begin(0, 500); //Start ISA object on CAN 0 at 500 kbps
   Can1.begin(CAN_BPS_500K, 255);
 
-  for (int filter = 0; filter < 7; filter++) {
-    Can1.setRXFilter(filter, 0, 0, false);
-  }
-  for (int filter = 0; filter < 7; filter++) {
-    Can0.setRXFilter(filter, 0, 0, false);
-  }
+  Can1.setRXFilter(0, 0, 0, false);//no filtering on CHAdeMO side??
+  Can0.setRXFilter(0, 0x521, 0x520, false);//filter for ISA - this accepts 520 through 52F
+  Can0.setRXFilter(1, 0x50F, 0x7FF, false);//filter for BMS - this accepts only 0x50F
 
+  Can0.attachObj(&myBMS);
+  myBMS.attachMBHandler(1);
 
   Wire.begin();
   EEPROM.read(0, settings);
@@ -211,6 +249,12 @@ void loop()
   if (Can1.available() > 0) {
     Can1.read(inFrame);
     chademo.handleCANFrame(inFrame);
+  }
+  if(myBMS.voltageStatus == 1){
+    chademo.setBattOverVolt();
+  }
+  if(myBMS.tempStatus == 4){
+    chademo.setBattOverTemp();
   }
 }
 
