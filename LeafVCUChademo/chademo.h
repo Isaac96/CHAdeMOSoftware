@@ -95,6 +95,7 @@ class CHADEMO
     void handleCANFrame(CAN_FRAME &frame);
     void setChargingFault();
     void setBattOverTemp();
+    void setBattOverVolt();
 
     //these need to be accessed quickly in tight spots so they're public in an attempt at efficiency
     uint8_t bChademoMode; //accessed but not modified in ISR so it should be OK non-volatile

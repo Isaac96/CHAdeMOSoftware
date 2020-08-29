@@ -62,6 +62,11 @@ void CHADEMO::setBattOverTemp()
   carStatus.battOverTemp = 1;
 }
 
+void CHADEMO::setBattOverVolt()
+{
+  carStatus.battOverVolt = 1;
+}
+
 //stuff that should be frequently run (as fast as possible)
 void CHADEMO::loop()
 {
@@ -239,6 +244,7 @@ void CHADEMO::loop()
           bChademoSendRequests = 0; //don't need to keep sending anymore.
           bListenEVSEStatus = 0; //don't want to pay attention to EVSE status when we're stopped
         }
+
         break;
     }
   }
@@ -279,12 +285,10 @@ void CHADEMO::doProcessing()
     {
       if (evse_status.presentVoltage > settings.targetChargeVoltage - 1) //All initializations complete and we're running.We've reached charging target
       {
-        //settings.ampHours=0; // Amp hours count up as used
-        //settings.kiloWattHours=settings.packSizeKWH; // Kilowatt Hours count down as used.
         if (settings.minChargeAmperage == 0 || carStatus.targetCurrent < settings.minChargeAmperage) {
           //putt SOC, ampHours and kiloWattHours reset in here once we actually reach the termination point.
-          settings.ampHours = 0; // Amp hours count up as used
-          settings.kiloWattHours = settings.packSizeKWH; // Kilowatt Hours count down as used.
+          chargeAmpHours = 0; // Amp hours count up as used
+          chargeKilowattHours = settings.packSizeKWH; // Kilowatt Hours count down as used.
           chademoState = CEASE_CURRENT;  //Terminate charging
         } else
           carStatus.targetCurrent--;  //Taper. Actual decrease occurs in sendChademoStatus
@@ -425,7 +429,7 @@ void CHADEMO::handleCANFrame(CAN_FRAME &frame)
       if (faultCount > 3)
       {
         SerialUSB.print(F("EVSE:fault code "));
-        SerialUSB.print(evse_status.status,HEX);
+        SerialUSB.print(evse_status.status, HEX);
         SerialUSB.println(F(" Abort."));
         if (chademoState == RUNNING) chademoState = CEASE_CURRENT;
       }
@@ -540,7 +544,7 @@ void CHADEMO::sendCANStatus()
   outFrame.data.byte[3] = askingAmps;
   outFrame.data.byte[4] = faults;
   outFrame.data.byte[5] = status;
-  outFrame.data.byte[6] = (uint8_t)settings.kiloWattHours;
+  outFrame.data.byte[6] = (uint8_t)chargeKilowattHours;
   outFrame.data.byte[7] = 0; //not used
   //CAN.EnqueueTX(outFrame);
   Can1.sendFrame(outFrame);
@@ -560,7 +564,7 @@ void CHADEMO::sendCANStatus()
     SerialUSB.print(F(" Status: "));
     SerialUSB.print(status, BIN);
     SerialUSB.print(F(" kWh: "));
-    SerialUSB.print(settings.kiloWattHours);
+    SerialUSB.print(chargeKilowattHours);
     timestamp();
   }
 
