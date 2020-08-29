@@ -9,6 +9,7 @@
   CHAdeMO code for Damien Maguire's "Leaf VCU" hardware https://evbmw.com/index.php/evbmw-webshop/nissan-built-and-tested-boards/leaf-inverter-controller-fully-built-and-tested
   Converted from ATMega to SAM3X by Isaac Kelly
   Original rights to EVTV/Collin Kidder
+  v0.7
 */
 
 //#define DEBUG_TIMING	//if this is defined you'll get time related debugging messages
@@ -23,11 +24,12 @@ template<class T> inline Print &operator <<(Print &obj, T arg) {
 
 //These have been moved to eeprom. After initial compile the values will be read from EEPROM.
 //These thus set the default value to write to eeprom upon first start up
-#define MAX_CHARGE_V	158
-#define MAX_CHARGE_A	130
-#define TARGET_CHARGE_V	160
+#define MAX_CHARGE_V	400
+#define MAX_CHARGE_A	125
+#define TARGET_CHARGE_V	390
 #define MIN_CHARGE_A	20
-#define CAPACITY 180
+#define CAPACITY 80
+#define CAPKWH 30
 
 
 const unsigned long Interval = 10;
@@ -38,7 +40,8 @@ unsigned long CurrentMillis = 0;
 float Voltage = 0;
 float Current = 0;
 float Power = 0;
-float lastSavedAH = 0;
+float chargeAmpHours = 0;
+float chargeKilowattHours = 0;
 int Count = 0;
 byte Command = 0; // "z" will reset the AmpHours and KiloWattHours counters
 volatile uint8_t timerIntCounter = 0;
@@ -93,8 +96,6 @@ class BMS : public CANListener //CANListener provides an interface to get callba
     uint8_t voltageStatus;//1 = hvc, 2 = lvc, 4 = bvc
     uint8_t tempStatus;//4 = overtemp
 };
-
-//Prints out the most useful information about the incoming frame.
 void BMS::printFrame(CAN_FRAME *frame, int mailbox)
 {
   Serial.print("MB: ");
@@ -111,10 +112,6 @@ void BMS::printFrame(CAN_FRAME *frame, int mailbox)
   }
   Serial.print("\r\n");
 }
-
-//Classes register just one method that receives all callbacks. If a frame didn't match any specific mailbox
-//callback but the general callback was registered then the mailbox will be set as -1. Otherwise it is the mailbox
-//with the matching filter for this frame.
 void BMS::gotFrame(CAN_FRAME* frame, int mailbox)
 {
   this->printFrame(frame, mailbox);
@@ -122,7 +119,7 @@ void BMS::gotFrame(CAN_FRAME* frame, int mailbox)
   tempStatus = frame->data.byte[2];
 }
 
-BMS myBMS; //initialize the class global so the reference to it can be picked up anywhere
+BMS myBMS;
 
 void setup()
 {
@@ -155,10 +152,8 @@ void setup()
 
   if (settings.valid != EEPROM_VALID) //not proper version so reset to defaults
   {
-    settings.packSizeKWH = 33.0; //just a random guess. Maybe it should default to zero though?
+    settings.packSizeKWH = CAPKWH;
     settings.valid = EEPROM_VALID;
-    settings.ampHours = 0.0;
-    settings.kiloWattHours = 0.0; // Is empty kiloWattHours count up
     settings.maxChargeAmperage = MAX_CHARGE_A;
     settings.maxChargeVoltage = MAX_CHARGE_V;
     settings.targetChargeVoltage = TARGET_CHARGE_V;
@@ -212,12 +207,12 @@ void loop()
     Count++;
     Voltage = Sensor.Voltage;
     Current = Sensor.Amperes;
-    settings.ampHours = Sensor.AH;
+    chargeAmpHours = Sensor.AH;
     Power = Sensor.KW;
 
     //Count down kiloWattHours when drawing current.
     //Count up when charging (Current/Power is negative)
-    settings.kiloWattHours = Sensor.KWH;
+    chargeKilowattHours = Sensor.KWH;
 
     chademo.doProcessing();
 
@@ -242,7 +237,7 @@ void loop()
       }
       else
       {
-        checkChargingState(); // looking for reset of charging.
+        Sensor.RESTART();//if not charging, restart the shunt; VCU should only be on if plugged in
       }
     }
   }
@@ -250,10 +245,10 @@ void loop()
     Can1.read(inFrame);
     chademo.handleCANFrame(inFrame);
   }
-  if(myBMS.voltageStatus == 1){
+  if (myBMS.voltageStatus == 1) {
     chademo.setBattOverVolt();
   }
-  if(myBMS.tempStatus == 4){
+  if (myBMS.tempStatus == 4) {
     chademo.setBattOverTemp();
   }
 }
@@ -269,7 +264,6 @@ void Save()
   SerialUSB.println("Saving EEPROM");
   noInterrupts();
   EEPROM.write(0, settings);
-  lastSavedAH = settings.ampHours;
   SerialUSB.println (F("SAVED"));
   interrupts();
   delay(1000);
@@ -385,8 +379,8 @@ void checkChargingState() {
 
 void ResetChargeState() {
   SerialUSB.println(F("Reset Ah & Wh"));
-  settings.ampHours = 0.0;
-  settings.kiloWattHours = settings.packSizeKWH;
+  chargeAmpHours = 0.0;
+  chargeKilowattHours = settings.packSizeKWH;
   Sensor.RESTART();
   Save();
   print8Val = 1;
@@ -400,11 +394,11 @@ void outputState() {
   SerialUSB.print (F("v "));
   SerialUSB.print (Current, 2);
   SerialUSB.print (F("A "));
-  SerialUSB.print (settings.ampHours, 1);
+  SerialUSB.print (chargeAmpHours, 1);
   SerialUSB.print (F("Ah "));
   SerialUSB.print (Power, 1);
   SerialUSB.print (F("kW "));
-  SerialUSB.print (settings.kiloWattHours, 1);
+  SerialUSB.print (chargeKilowattHours, 1);
   SerialUSB.print (F("kWh "));
   SerialUSB.print (F("OUT1"));
   SerialUSB.print (digitalRead(OUT1) > 0 ? F(":1 ") : F(":0 "));
@@ -458,9 +452,9 @@ void printSettings() {
   print8Val = 0;
   SerialUSB.println (F("-"));
   SerialUSB.print (F("AH "));
-  SerialUSB.println (settings.ampHours);
+  SerialUSB.println (chargeAmpHours);
   SerialUSB.print (F("KWH "));
-  SerialUSB.println (settings.kiloWattHours);
+  SerialUSB.println (chargeKilowattHours);
   SerialUSB.print (F("AMIN "));
   SerialUSB.println (settings.minChargeAmperage, 1);
   SerialUSB.print (F("AMAX "));

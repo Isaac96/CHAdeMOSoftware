@@ -12,8 +12,6 @@
 typedef struct
 {
   uint8_t valid; //a token to store EEPROM version and validity. If it matches expected value then EEPROM is not reset to defaults //0
-  float ampHours; //floats are 4 bytes //1
-  float kiloWattHours; //5
   float packSizeKWH; //9
   uint16_t maxChargeVoltage; //21
   uint16_t targetChargeVoltage; //23
@@ -26,6 +24,8 @@ typedef struct
 extern EESettings settings;
 extern float Voltage;
 extern float Current;
+extern float chargeAmpHours;
+extern float chargeKilowattHours;
 extern unsigned long CurrentMillis;
 extern int Count;
 
